@@ -38,3 +38,18 @@ def autotuned_kernel(..., BLOCK_SIZE: tl.constexpr):
 
     ...
 ```
+
+### When to Use Triton :bulb:
+
+- Custom operations not in PyTorch/TensorFlow
+- Fused operations (combine multiple ops into one kernel)
+- Memory bound operations (optimise memory access patterns)
+- Compute-bound operatipns (optimize arithmetic intensity)
+- Hardware-specific optimizations (tensor cores, etc.)
+
+__When NOT to Use Triton__
+
+- Simple operations already optimized in PyTorch
+- Small tensors (overhead of jernel launch)
+- Operations that don't benefit from custom implemention
+- When you need portability across non-NVIDIA GPUs.

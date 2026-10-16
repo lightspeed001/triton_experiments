@@ -1,0 +1,20 @@
+// kernel.llir — abridged/illustrative (bf16, sm_80)
+@__shared__..bufA#0 = global [32768 x i8] zeroinitializer, align 16  // staged tiles, addrspace(3)
+define void @_fused_moe_kernel(ptr %a, ptr %b, ptr %c, …) local_unnamed_addr {
+  %ctaid = tail call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()
+  %tid   = tail call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
+  // …tile address math (group swizzle, sorted-token indirection) as scalar arith…
+  // async staged load of the next K-tile:
+  tail call void @llvm.nvvm.cp.async.ca.shared.global(ptr addrspace(3) %dst, ptr %src, i32 16)
+  tail call void @llvm.nvvm.cp.async.commit.group()
+  tail call void @llvm.nvvm.cp.async.wait.group(i32 2)
+  tail call void @llvm.nvvm.barrier0()
+  // fragments from shared (swizzled) + the tensor-core op as inline PTX:
+  %f = load <4 x bfloat>, ptr addrspace(3) %swizzled, align 16
+  %mma = tail call {f32,f32,f32,f32} asm sideeffect
+        "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 $0,$1,$2,$3, …;",
+        "=f,=f,=f,=f,r,r,0,1,2,3,…"(…fragments + accumulator…)
+  // …accumulator FMA/convert, masked scatter store to %c…
+  ret void
+}
+declare i32 @llvm.nvvm.read.ptx.sreg.tid.x()  // …etc.

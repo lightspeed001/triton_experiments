@@ -1,0 +1,21 @@
+// kernel.ttir — abridged/illustrative
+tt.func @_fused_moe_kernel(%a: !tt.ptr<bf16>, %b: !tt.ptr<bf16>, %c: !tt.ptr<bf16>,
+                          %w: !tt.ptr<f32>, %sorted: !tt.ptr<i32>, %expert_ids: !tt.ptr<i32>,
+                          %post_pad: !tt.ptr<i32>, %N: i32, %K: i32, %EM: i32, %nvt: i32, ...) {
+  %pid  = tt.get_program_id x : i32
+  // …pid_m/pid_n from group-swizzle: pure arith on %pid, %EM, %N…
+  %eid  = tt.load %expert_ids + %pid_m : i32
+  %tok  = tt.load %sorted + %pid_m*BM + tt.make_range{0, BM} : tensor<BMxi32>
+  %tmask = arith.cmpi slt, %tok, %nvt : tensor<BMxi1>
+  %aptr = tt.addptr %a, (%tok // top_k)*sam + tt.make_range{0,BK}*sak : tensor<BMxBKx!tt.ptr<bf16>>
+  %bptr = tt.addptr %b, %eid*sbe + … : tensor<BKxBNx!tt.ptr<bf16>>
+  %acc0 = tt.splat %zero : tensor<BMxBNxf32>
+  scf.for %k = %c0 to %K step %BK iter_args(%acc = %acc0) {
+    %a = tt.load %aptr, mask=%tmask ⊕ …, other=0.0 : tensor<BMxBKxbf16>
+    %b = tt.load %bptr : tensor<BKxBNxbf16>
+    %nacc = tt.dot %a, %b, %acc {inputPrecision = ieee} : tensor<BMxBNxf32>
+    scf.yield %nacc
+  }
+  // …routed-weight multiply (MUL_ROUTED_WEIGHT folded at constexpr), scatter store…
+  tt.store %c, %cval, mask=%tmask⊕ : tensor<BMxBNxbf16>
+}
